@@ -1,0 +1,101 @@
+#!/bin/bash
+
+show_help() {
+    echo "Usage: $0 <distribution> <min> <max>"
+    echo
+    echo "Generate a random sleep duration and sleep for that amount of time."
+    echo
+    echo "Arguments:"
+    echo "  distribution   Type of distribution to use (uniform or normal)"
+    echo "  min            Minimum sleep duration in seconds (>= 0.1)"
+    echo "  max            Maximum sleep duration in seconds (<= 10)"
+    echo
+    echo "Examples:"
+    echo "  $0 uniform 0.5 2.5"
+    echo "  $0 normal 1 5"
+}
+
+generate_random() {
+    od -An -N4 -t u4 /dev/urandom | awk '{print $1 / 4294967295}'
+}
+
+uniform_distribution() {
+    local min=$1
+    local max=$2
+    local random=$(generate_random)
+    echo "$min + ($max - $min) * $random" | bc -l
+}
+
+normal_distribution() {
+    local min=$1
+    local max=$2
+    local u1=$(generate_random)
+    local u2=$(generate_random)
+    
+    local z0=$(echo "scale=10; sqrt(-2 * l($u1)) * c(2 * 3.14159265359 * $u2)" | bc -l)
+    
+    local range=$(echo "$max - $min" | bc -l)
+    local mid=$(echo "($max + $min) / 2" | bc -l)
+    local std_dev=$(echo "$range / 6" | bc -l)
+    
+    echo "$mid + $std_dev * $z0" | bc -l
+}
+
+random_sleep() {
+    local distribution=$1
+    local min=$2
+    local max=$3
+
+    # Check if all arguments are provided
+    if [ $# -ne 3 ]; then
+        show_help
+        exit 1
+    fi
+
+    # Validate distribution type
+    if [[ "$distribution" != "uniform" && "$distribution" != "normal" ]]; then
+        echo "Error: Invalid distribution. Use 'uniform' or 'normal'."
+        show_help
+        exit 1
+    fi
+
+    # Validate min and max are numbers
+    if ! [[ "$min" =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! [[ "$max" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "Error: min and max must be numbers."
+        show_help
+        exit 1
+    fi
+
+    # Validate input range
+    if (( $(echo "$min > $max" | bc -l) )) || (( $(echo "$min < 0.1" | bc -l) )) || (( $(echo "$max > 10" | bc -l) )); then
+        echo "Error: Invalid input. Ensure 0.1 <= min <= max <= 10"
+        show_help
+        exit 1
+    fi
+
+    # Generate sleep duration based on specified distribution
+    if [ "$distribution" = "uniform" ]; then
+        duration=$(uniform_distribution $min $max)
+    else
+        duration=$(normal_distribution $min $max)
+    fi
+
+    # Ensure the duration is within the specified range
+    duration=$(echo "if ($duration < $min) $min else if ($duration > $max) $max else $duration" | bc -l)
+
+    # Round to 3 decimal places for practical purposes
+    duration=$(printf "%.3f" $duration)
+
+    echo $duration
+}
+
+# Show help if no arguments or -h/--help is given
+if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_help
+    exit 0
+fi
+
+# Call the function with command-line arguments
+sleep_time=$(random_sleep "$1" "$2" "$3")
+echo "Sleeping for $sleep_time seconds..."
+sleep $sleep_time

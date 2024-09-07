@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# this randomizes a mullvad wireguard vpn connection
+
+hlp () { echo "$0 [up|down|test] iface_name [./wireguard_config_dir]" ; }
+
+wg_updown="$1"
+wg_if="$2"
+wg_dir="$3"
+
+[   -z "$wg_updown" ] && hlp                                              && exit 1
+[   -z "$wg_if"     ] && hlp                                              && exit 1
+[ ${#wg_if} -gt 15  ] && echo "wireguard iface name too long: $wg_if"     && exit 1
+
+case $wg_updown in
+
+    up)
+
+        ifconfig $wg_if &>/dev/null && echo "wireguard iface $wg_if already exists!" && exit 0
+
+        [   -z "$wg_dir" ]          && hlp                               && exit 1
+        [ ! -d "$wg_dir" ]          && echo "no such directory: $wg_dir" && exit 1
+
+        echo "turning on wireguard vpn"
+
+        ipaddr_before="$(curl icanhazip.com 2>/dev/null)"
+
+        wgconfig=$(find "$wg_dir" -type f -name "*.conf" 2>/dev/null | shuf | head -n 1)
+
+        sudo cp    -v     "$wgconfig" /etc/wireguard/$wg_if.conf
+        sudo chmod -v 755             /etc/wireguard/$wg_if.conf
+
+        sudo wg-quick up $wg_if 2>/dev/null
+
+        # ifconfig $wg_if
+
+        ipaddr_after="$(curl icanhazip.com 2>/dev/null)"
+
+        [ "$ipaddr_before" == "$ipaddr_after" ] && echo "VPN FAILED TO INITIALIZE" && exit 1
+
+        echo "IP address updated from $ipaddr_before to $ipaddr_after"
+
+    ;;
+
+    down)
+    
+        # ifconfig $wg_if &>/dev/null || { echo "wireguard iface $wg_if does not exist!" && exit 1 ; }
+        
+        echo "turning off wireguard vpn"
+
+        sudo wg-quick down $wg_if 2>/dev/null
+
+        sudo rm -rfv /etc/wireguard/$wg_if.conf
+
+        # echo "done"
+
+    ;;
+
+    test)
+
+        ipaddr="$(curl icanhazip.com 2>/dev/null)"
+
+        if ifconfig $wg_if &>/dev/null ; then
+
+            echo "wireguard iface $wg_if exists!"
+            exit 0
+
+        else 
+
+            echo "wireguard iface $wg_if is down!"
+            exit 1
+
+        fi
+
+    ;;
+
+    *)
+        hlp
+    ;;
+
+esac

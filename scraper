@@ -1,0 +1,184 @@
+#!/bin/bash
+
+set -e
+
+venv_path=/opt/scraper/venv
+urlsfolder=/var/lib/scraper/pool
+useragents=/opt/scraper/useragents.txt
+wg_configs=/opt/scraper/wireguard
+
+wgiface=price0
+
+# we dont want the url requests to pile up indefinitely, so delete any that are older than max_age
+max_age=172800
+
+# sleep
+# 
+# as far as the target domain can tell, there should be no timing corellation 
+# between our hits. this requires high-quality randomness. We have several 
+# different sleep periods; our randomsleep function takes a min and max value.
+# it also takes an argument specifying if we want to use a normal or uniform 
+# distribution in our randomness function.
+# 
+#   unblock     when the downloader encounters an error, we need to backpedal
+#               hard - we've been exposed, and we need to return to the shadows
+#
+#   interdl     in between successfull downloads, we should wait a little bit
+
+sleep_randomness=uniform
+
+sleep_unblock_min=4
+sleep_unblock_max=10
+
+sleep_interdl_min=0.1
+sleep_interdl_max=5
+
+# the delay while waiting for new urls to be requested isn't visible to the 
+# remote hosts. pick something.
+sleep_inactive=1
+
+display_sizes=(
+
+    '1024x768x24'
+    '1280x720x24'
+    '1280x800x24'
+    '1366x768x24'
+    '1440x900x24'
+    '1600x900x24'
+    '1680x1050x24'
+    '1920x1080x24'
+    '1920x1200x24'
+    '2560x1440x24'
+    '2560x1600x24'
+    '3840x2160x24'
+    '4096x2160x24'
+
+)
+
+## -- [ functions ] ----------------------------------------------------------------------------- ##
+
+echob () { echo -e "\033[38;5;67m$*\033[0m"; }
+
+cleanup () {
+    echo ''
+    echob "cleaning up"
+    randomvpn down $wgiface
+    rm -rf "$tmp"
+    deactivate
+    # echo "done"
+}
+
+calculate_window_size() {
+
+    local width height min_width=800 min_height=600
+
+    IFS='x' read -r width height _ <<< "$1"
+
+    local window_width=$(( RANDOM % (width  - min_width  + 1) + min_width))
+    local window_height=$((RANDOM % (height - min_height + 1) + min_height))
+
+    ((window_width  > width))  && window_width=$width
+    ((window_height > height)) && window_height=$height
+
+    echo "$window_width,$window_height"
+
+}
+
+unblock () {
+    
+    echob "unblocking"
+
+    randomvpn down $wgiface
+    sleep 1
+    randomvpn up $wgiface $wg_configs
+    sleep 1
+    randomvpn test $wgiface || { echo "vpn failed" ; exit 1 ; }
+
+}
+
+
+
+## -- [ main ] ---------------------------------------------------------------------------------- ##
+
+echob "initializing scraper"
+echo  "wireguard interface:  $wgiface"
+echo  "wait-for-url sleep:   $sleep_inactive sec"
+echo  "inter-download range: $sleep_interdl_min - $sleep_interdl_max sec"
+echo  "unblock wait range:   $sleep_unblock_min - $sleep_unblock_max sec"
+echo  "distribution:         $sleep_randomness"
+echo ""
+echo "to reset request pool, run: rm -rf $urlsfolder/*"
+echo "watching for downloads"
+
+trap cleanup EXIT
+
+source "$venv_path/bin/activate"
+
+while : ; do
+
+    find "$urlsfolder" -type f -mtime +$(( max_age/86400 )) -delete
+
+    url_file=$(find "$urlsfolder" -maxdepth 1 -type f 2>/dev/null | shuf | head -n 1)
+
+    [ -z "$url_file" ] && sleep $sleep_inactive && continue
+
+    dir=$(cat "$url_file" | xargs | cut -d ' ' -f 1 )
+    url=$(cat "$url_file" | xargs | cut -d ' ' -f 2 )
+
+    echob "url download requested: $url_file"
+
+    randomvpn up $wgiface $wg_configs
+
+    randomvpn test $wgiface
+
+    [ ! -d "$tmp" ] && tmp=$(mktemp --directory --tmpdir="/tmp/")
+
+    useragent=$(grep -v '^$' "$useragents" | shuf -n 1)
+    display_size=${display_sizes[RANDOM % ${#display_sizes[@]}]}
+    window_size=$(calculate_window_size $display_size)
+    
+    dl_dir=$(mktemp --directory --tmpdir="$tmp")
+    chrome_data=$( mktemp --directory --tmpdir="$tmp")
+
+    echo "$url" > "$dl_dir/url"
+
+    echob "downloading $url -> $dir"
+
+    set +e
+
+    (
+        xvfb-run -a --server-args="-screen 1, $display_size" \
+            python3 /bin/download.py "$dl_dir" "$useragent" "$window_size" "$chrome_data" "$url"
+        
+    )
+
+    status=$?
+
+    set -e
+
+    if [ $status -ne 0 ] || [ -f "$dl_dir/page_files/500_503.png" ] || [ ! -f "$dl_dir/page.html" ]
+    then
+
+        unblock
+
+        randomsleep uniform $sleep_unblock_min $sleep_unblock_max
+
+    else
+
+        echo "successfully downloaded url"
+
+        rm -rf "$url_file"
+
+        echo $(date +%s)                    > "$dl_dir/scrape_time"
+
+        mv "$dl_dir" "$dir"
+
+        randomsleep uniform $sleep_interdl_min $sleep_interdl_max
+
+    fi
+
+    rm -rf "$tmp"
+
+done
+
+echo "closed the loop"

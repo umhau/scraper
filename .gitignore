@@ -1,0 +1,8 @@
+old
+
+wireguard/*conf
+wg-defunct/old/*conf
+wg-defunct/wg-international/*conf
+wg-international/*conf
+
+*.zip
