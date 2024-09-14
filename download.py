@@ -25,6 +25,10 @@ window_size     = sys.argv[3]
 user_data_dir   = sys.argv[4]
 url             = sys.argv[5]
 
+# Ensure the URL includes the protocol
+if not url.startswith(('http://', 'https://')):
+    url = 'http://' + url
+
 options = Options()
 
 options.add_argument(f"user-agent={user_agent}")    
