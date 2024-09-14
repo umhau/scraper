@@ -4,19 +4,36 @@ set -e
 
 [ `whoami` != 'root' ] && echo "must run as root!" && exit 1
 
+# specify the path to the WireGuard zip file we should use
+mullvad_wg_zip="./wireguard/mature_bird/mullvad_wireguard_linux_us_all.zip"
+
 venv_path=/opt/scraper/venv
 urlsfolder=/var/lib/scraper/pool
+defaultout=/var/lib/scraper/dump
 wireguardconfigs=/opt/scraper/wireguard
 useragents=/opt/scraper/useragents.txt
 
-[ "$1" != 'quick' ] && rm -rf /opt/scraper /var/lib/scraper
+wipe () {
+    echo 'wiping all traces of scraper'
+    rm -rf /opt/scraper /var/lib/scraper
+    rm -rf /bin/download.py /bin/scraper /bin/randomvpn /bin/randomsleep
+}
 
-mkdir -pv /opt/scraper/venv /var/lib/scraper/pool /opt/scraper/wireguard
-chmod 777 /var/lib/scraper/pool
+[ "$1" == 'wipe' ]         && wipe                                               && exit 0
+[ "$1" != 'quick' ]        && rm -rf /opt/scraper /var/lib/scraper
+[ ! -f "$mullvad_wg_zip" ] && echo "no such wireguard zip file: $mullvad_wg_zip" && exit 1
+
+mkdir -pv /opt/scraper/venv /var/lib/scraper/pool /var/lib/scraper/dump /opt/scraper/wireguard
+chmod 777 /var/lib/scraper/pool /var/lib/scraper/dump
 
 install -v download.py scraper randomvpn randomsleep /bin/
 install -v ./useragents.txt   /opt/scraper
-install ./wireguard/*.conf /opt/scraper/wireguard/
+
+rm -rf /opt/scraper/wireguard/*.conf
+temp_wg_conf_dir=$(mktemp -d)
+unzip -q -o "$mullvad_wg_zip" -d "$temp_wg_conf_dir"
+install $temp_wg_conf_dir/*.conf /opt/scraper/wireguard/
+rm -rf "$temp_wg_conf_dir"
 
 # we need to manage wireguard as a non-root user
 echo 'root ALL=(ALL:ALL) ALL' > /etc/sudoers
@@ -29,6 +46,7 @@ usermod -aG wheel mal
 # ln -sv /etc/sv/dbus /var/service/    2>/dev/null
 # ln -sv /etc/sv/lightdm /var/service/ 2>/dev/null
 
+# Set terminal color support
 echo 'TERM=xterm-256color' >> /root/.bashrc
 
 packages=(
@@ -44,8 +62,8 @@ packages=(
 
     # virtual chrome windows for downloading
     python3-tkinter xvfb-run chromium 
-    
-    # vpn
+
+    # vpn tools
     wireguard-tools wireguard
 
     # virtual chrome windows need to not be headless

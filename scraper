@@ -2,8 +2,21 @@
 
 set -e
 
+# the networked version of our scraper - this version maintains a default dump directory, and 
+# ensures both the request and the dump dirs are `chmod 777` - 
+# 
+# both directories should be subdirs of a directory that is mounted read-write by all clients; also
+# ensure that all clients have a copy of an ssh key that will ensure access to that directory
+# 
+# test it locally with the following; note that the urls comes second, and must include the protocol
+# else it will fail:
+# 
+#   echo '/var/lib/scraper/dump/0000 https://www.google.com' > /var/lib/scraper/pool/1111
+
+
 venv_path=/opt/scraper/venv
 urlsfolder=/var/lib/scraper/pool
+defaultout=/var/lib/scraper/dump
 useragents=/opt/scraper/useragents.txt
 wg_configs=/opt/scraper/wireguard
 
@@ -101,6 +114,9 @@ unblock () {
 ## -- [ main ] ---------------------------------------------------------------------------------- ##
 
 echob "initializing scraper"
+
+[ "$1" == 'reset' ] && echo "resetting urls pool" && rm -rf $urlsfolder/* && echo "done" && exit 0
+
 echo  "wireguard interface:  $wgiface"
 echo  "wait-for-url sleep:   $sleep_inactive sec"
 echo  "inter-download range: $sleep_interdl_min - $sleep_interdl_max sec"
