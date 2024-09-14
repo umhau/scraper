@@ -6,3 +6,5 @@ wg-defunct/wg-international/*conf
 wg-international/*conf
 
 *.zip
+*.png
+wireguard/account

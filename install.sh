@@ -26,8 +26,8 @@ wipe () {
 mkdir -pv /opt/scraper/venv /var/lib/scraper/pool /var/lib/scraper/dump /opt/scraper/wireguard
 chmod 777 /var/lib/scraper/pool /var/lib/scraper/dump
 
-install -v download.py scraper randomvpn randomsleep /bin/
-install -v ./useragents.txt   /opt/scraper
+install -v bin/* /bin/
+install -v opt/* /opt/scraper/
 
 rm -rf /opt/scraper/wireguard/*.conf
 temp_wg_conf_dir=$(mktemp -d)
