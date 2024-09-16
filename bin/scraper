@@ -83,7 +83,7 @@ cleanup () {
 
 calculate_window_size() {
 
-    local width height min_width=800 min_height=600
+    local width height min_width=800 min_height=700
 
     IFS='x' read -r width height _ <<< "$1"
 
@@ -172,12 +172,23 @@ while : ; do
 
     set -e
 
-    if [ $status -ne 0 ] || [ -f "$dl_dir/page_files/500_503.png" ] || [ ! -f "$dl_dir/page.html" ]
+    # check for basic failure
+    if [ $status -ne 0 ] || [ ! -f "$dl_dir/page.html" ]
     then
 
-        unblock
+        unblock && randomsleep uniform $sleep_unblock_min $sleep_unblock_max
 
-        randomsleep uniform $sleep_unblock_min $sleep_unblock_max
+    # amazon blocked us
+    elif [ -f "$dl_dir/page_files/500_503.png" ]
+    then
+
+        unblock && randomsleep uniform $sleep_unblock_min $sleep_unblock_max
+
+    # reddit blocked us
+    elif grep -q 'Your request has been blocked due to a network policy.' "$dl_dir/page.html"
+    then
+
+        unblock && randomsleep uniform $sleep_unblock_min $sleep_unblock_max
 
     else
 
